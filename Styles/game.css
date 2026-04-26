@@ -11,18 +11,18 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   padding: 20px;
 }
 
 main {
   width: 100%;
-  max-width: 400px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 40px;
+  margin: 0;
 }
 
 h1 {
@@ -32,11 +32,43 @@ h1 {
   letter-spacing: -0.5px;
 }
 
+.host-finish-round-btn {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 10000;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 12px;
+  background-color: #c53030;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.host-finish-round-btn:hover {
+  background-color: #9b2c2c;
+}
+
+.host-finish-round-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.host-finish-round-btn.hidden {
+  display: none;
+}
+
 .tasks-container {
-  width: 100%;
+  width: 33vw;              /* около трети экрана */
+  max-width: 640px;         /* чтобы не разъезжалось слишком сильно на очень широких экранах */
+  min-width: 320px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  margin: 0 auto;
 }
 
 .task-button {
@@ -69,8 +101,19 @@ h1 {
   background-color: #1a3a5f;
 }
 
+.task-button:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.task-button--pending {
+  background-color: #6b7280; /* gray while waiting for confirmation resolution */
+}
+
 .confirmation-area {
-  width: 100%;
+  width: 33vw;
+  max-width: 640px;
+  min-width: 320px;
   margin-top: 20px;
   padding: 20px 24px;
   background-color: #1e3a5f;
@@ -79,10 +122,14 @@ h1 {
   flex-direction: column;
   gap: 16px;
   align-items: center;
+  /* Reserve height so tasks don't jump when the area toggles visibility */
+  min-height: 210px;
 }
 
 .confirmation-area.hidden {
-  display: none;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .confirmation-message {
@@ -121,6 +168,308 @@ h1 {
   background-color: #1a3a5f;
 }
 
+.task-confirmation-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.task-confirmation-modal.hidden {
+  display: none;
+}
+
+.task-confirmation-modal-content {
+  width: 100%;
+  max-width: 420px;
+  background-color: #11253d;
+  border: 1px solid #2a4a6f;
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-confirmation-title {
+  font-size: 24px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.task-confirmation-question {
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+  color: #e2e8f0;
+}
+
+.task-confirmation-task-text {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  margin: 0;
+}
+
+.task-confirmation-timer {
+  font-size: 18px;
+  text-align: center;
+}
+
+.task-confirmation-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-confirmation-action-btn {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 14px 16px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-confirmation-action-btn.confirm {
+  background-color: #2f855a;
+}
+
+.task-confirmation-action-btn.abstain {
+  background-color: #4a5568;
+}
+
+.task-confirmation-action-btn.reject {
+  background-color: #c53030;
+}
+
+.task-confirmation-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Rating modal (1–5) */
+
+.task-rating-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.task-rating-modal.hidden {
+  display: none;
+}
+
+.task-rating-modal-content {
+  width: 100%;
+  max-width: 420px;
+  background-color: #11253d;
+  border: 1px solid #2a4a6f;
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-rating-title {
+  font-size: 24px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.task-rating-question {
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+  color: #e2e8f0;
+}
+
+.task-rating-completer {
+  font-size: 16px;
+  font-weight: 500;
+  text-align: center;
+  color: #e2e8f0;
+}
+
+.task-rating-task-text {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #cbd5e1;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  margin: 0;
+}
+
+.task-rating-timer {
+  font-size: 18px;
+  text-align: center;
+}
+
+.task-rating-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  justify-content: center;
+}
+
+.task-rating-btn {
+  flex: 1;
+  min-width: 40px;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 0;
+  color: #fff;
+  background-color: #2a4a6f;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.task-rating-btn:hover {
+  background-color: #3a5a7f;
+}
+
+.task-rating-btn:active {
+  background-color: #1a3a5f;
+}
+
+.task-rating-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Completed/failed/discarded visual state for performer */
+
+.task-button--completed {
+  background-color: #2f855a;
+}
+
+.task-button--failed {
+  background-color: #c53030;
+}
+
+.task-button--discarded {
+  background-color: #4a5568;
+}
+
+.task-result-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Final leaderboard */
+
+.final-leaderboard-container {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.final-leaderboard-container.hidden {
+  display: none;
+}
+
+.game-content.hidden {
+  display: none;
+}
+
+.final-leaderboard-title {
+  font-size: 28px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.final-leaderboard-list {
+  width: 100%;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.final-leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background-color: #1e3a5f;
+  border-radius: 12px;
+  font-size: 18px;
+  flex-wrap: wrap;
+}
+
+.final-leaderboard-rank {
+  min-width: 32px;
+  font-weight: 700;
+}
+
+.final-leaderboard-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.final-leaderboard-score {
+  font-weight: 600;
+}
+
+.final-leaderboard-time {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 16px;
+}
+
+.final-leaderboard-task-times {
+  width: 100%;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: -6px;
+}
+
+.final-leaderboard-gold {
+  background: linear-gradient(135deg, #d4af37 0%, #b8860b 100%);
+  color: #1a1a1a;
+}
+
+.final-leaderboard-gold .final-leaderboard-time {
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.final-leaderboard-silver {
+  background: linear-gradient(135deg, #c0c0c0 0%, #a0a0a0 100%);
+  color: #1a1a1a;
+}
+
+.final-leaderboard-silver .final-leaderboard-time {
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.final-leaderboard-bronze {
+  background: linear-gradient(135deg, #cd7f32 0%, #8b4513 100%);
+  color: #fff;
+}
+
 @media (min-width: 768px) {
   h1 {
     font-size: 40px;
@@ -142,5 +491,13 @@ h1 {
   .confirmation-btn {
     padding: 16px 24px;
     font-size: 18px;
+  }
+
+  .task-confirmation-title {
+    font-size: 28px;
+  }
+
+  .task-confirmation-timer {
+    font-size: 20px;
   }
 }

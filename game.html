@@ -8,7 +8,9 @@
 </head>
 <body>
   <main>
+    <div id="gameContent" class="game-content">
     <h1>Игра</h1>
+    <button id="hostFinishRoundBtn" class="host-finish-round-btn hidden" type="button">Завершить раунд</button>
     <div id="tasksContainer" class="tasks-container">
       <!-- Tasks will be loaded dynamically -->
     </div>
@@ -19,7 +21,46 @@
         <button class="confirmation-btn" id="confirmNo">Нет</button>
       </div>
     </div>
+    </div>
+    <div id="finalLeaderboardContainer" class="final-leaderboard-container hidden">
+      <!-- Rendered by FinalLeaderboardScreen -->
+    </div>
   </main>
+
+  <div id="taskConfirmationModal" class="task-confirmation-modal hidden" role="dialog" aria-modal="true" aria-labelledby="taskConfirmationTitle">
+    <div class="task-confirmation-modal-content">
+      <h2 id="taskConfirmationTitle" class="task-confirmation-title">Task Confirmation</h2>
+      <p class="task-confirmation-question" id="taskConfirmationQuestion">Did [ProvocateurName] complete the task?</p>
+      <p class="task-confirmation-task-text" id="taskConfirmationTaskText"></p>
+      <p class="task-confirmation-timer">
+        Time left: <span id="taskConfirmationTimerValue">60</span>s
+      </p>
+      <div class="task-confirmation-actions">
+        <button id="taskVoteConfirmBtn" class="task-confirmation-action-btn confirm">✔ Confirm</button>
+        <button id="taskVoteAbstainBtn" class="task-confirmation-action-btn abstain">◯ Abstain</button>
+        <button id="taskVoteRejectBtn" class="task-confirmation-action-btn reject">✖ Reject</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="taskRatingModal" class="task-rating-modal hidden" role="dialog" aria-modal="true" aria-labelledby="taskRatingTitle">
+    <div class="task-rating-modal-content">
+      <h2 id="taskRatingTitle" class="task-rating-title">Rate the task</h2>
+      <p class="task-rating-question">How well was the task performed?</p>
+      <p class="task-rating-completer" id="taskRatingCompleterName"></p>
+      <p class="task-rating-task-text" id="taskRatingTaskText"></p>
+      <p class="task-rating-timer">
+        Time left: <span id="taskRatingTimerValue">30</span>s
+      </p>
+      <div class="task-rating-actions">
+        <button class="task-rating-btn" data-score="1">1</button>
+        <button class="task-rating-btn" data-score="2">2</button>
+        <button class="task-rating-btn" data-score="3">3</button>
+        <button class="task-rating-btn" data-score="4">4</button>
+        <button class="task-rating-btn" data-score="5">5</button>
+      </div>
+    </div>
+  </div>
   <script type="module" src="./js/main.js"></script>
 </body>
 </html>

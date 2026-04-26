@@ -96,14 +96,21 @@ async function updateUserReady(roomId, userId, ready) {
 }
 
 // Update room status (e.g. waiting -> active)
-async function updateRoomStatus(roomId, status) {
+async function updateRoomStatus(roomId, status, roundId = null) {
   const roomRef = doc(db, "rooms", roomId);
-
-  await updateDoc(roomRef, {
+  const payload = {
     status: status
-  });
+  };
 
-  console.log("Room status updated:", roomId, "status:", status);
+  // Persist active round ID so all clients can sync voting writes.
+  if (roundId) {
+    payload.roundId = roundId;
+    payload.roundStartedAt = serverTimestamp();
+  }
+
+  await updateDoc(roomRef, payload);
+
+  console.log("Room status updated:", roomId, "status:", status, "roundId:", roundId);
 }
 
 export { createRoom, joinRoom, findRoomByCode, updateUserReady, updateRoomStatus };

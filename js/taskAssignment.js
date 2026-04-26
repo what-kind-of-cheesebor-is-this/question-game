@@ -10,7 +10,9 @@ import {
   collection,
   doc,
   getDocs,
-  updateDoc
+  updateDoc,
+  setDoc,
+  serverTimestamp
 } from
 "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getAllTaskTemplates, isValidTaskIdFormat } from "./taskTemplates.js";
@@ -117,10 +119,13 @@ function selectTargetPlayer(availableTargets, targetCounts) {
 
 /**
  * Assign tasks to all users in a room
+ * - Writes per-user task entries (for UI)
+ * - Writes authoritative assignments under rooms/{roomId}/rounds/{roundId}/assignments/{assignmentId}
  * @param {string} roomId - Room ID
+ * @param {string} [roundId] - Optional round ID for this assignment wave
  * @returns {Promise<void>}
  */
-async function assignTasksToRoom(roomId) {
+async function assignTasksToRoom(roomId, roundId) {
   try {
     // Check if tasks already assigned
     if (await tasksAlreadyAssigned(roomId)) {
@@ -164,6 +169,11 @@ async function assignTasksToRoom(roomId) {
     // Track used template IDs to ensure uniqueness across the room
     const usedTemplateIds = new Set();
     const assignedTaskIds = [];
+    
+    // Precompute collection ref for authoritative assignments (optional if roundId is provided)
+    const assignmentsCollectionRef = roundId
+      ? collection(db, "rooms", roomId, "rounds", roundId, "assignments")
+      : null;
     
     // Assign tasks to each user (including host)
     for (const user of users) {
@@ -220,6 +230,35 @@ async function assignTasksToRoom(roomId) {
           targetUserId: target.id,
           targetName: target.name.trim()
         };
+        
+        // Persist authoritative assignment document under rounds/{roundId}/assignments
+        if (assignmentsCollectionRef && roundId) {
+          const assignmentRef = doc(assignmentsCollectionRef);
+          const assignmentId = assignmentRef.id;
+          
+          // Link assignmentId back to the per-user task entry so UI can reference it later
+          taskAssignment.assignmentId = assignmentId;
+          
+          await setDoc(assignmentRef, {
+            taskId: taskId,
+            provocateurId: user.id,
+            targetId: target.id,
+            status: "assigned",
+            createdAt: serverTimestamp(),
+            completedAt: null,
+            confirmationResult: null,
+            score: null
+          });
+          
+          console.log("[ASSIGNMENT_WRITE] Created assignment", {
+            roomId,
+            roundId,
+            assignmentId,
+            taskId,
+            provocateurId: user.id,
+            targetId: target.id
+          });
+        }
         
         // Log assignment for debugging (showing taskId vs display label)
         console.log(`[TASK_ASSIGN] Assigning taskId="${taskId}" to user="${user.name}" with target="${target.name}"`);

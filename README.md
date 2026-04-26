@@ -29,7 +29,7 @@ question-game/
 ├── creater_screen.html        # Экран создания комнаты
 ├── connection_screen.html     # Экран подключения к комнате
 ├── lobby.html                 # Лобби (ожидание игроков)
-├── game.html                  # Игровой экран (отображение заданий)
+├── game.html                  # Игровой экран + модалка подтверждения задания
 ├── js/
 │   ├── main.js               # Точка входа (импортирует модули)
 │   ├── firebase.js           # Инициализация Firebase
@@ -43,7 +43,7 @@ question-game/
 │   ├── creater_screen.css    # Стили экрана создания
 │   ├── connection_screen.css # Стили экрана подключения
 │   ├── lobby.css             # Стили лобби
-│   └── game.css              # Стили игрового экрана
+│   └── game.css              # Стили игрового экрана и confirmation modal
 └── README.md                 # Документация
 ```
 
@@ -58,14 +58,14 @@ question-game/
 - `db` - экземпляр Firestore
 
 #### `rooms.js`
-Управление комнатами и пользователями.
+Управление комнатами, пользователями и активным раундом.
 
 **Функции:**
 - `createRoom()` - создает новую комнату с уникальным кодом
 - `joinRoom(roomId, userName, role)` - добавляет пользователя в комнату
 - `findRoomByCode(code)` - находит комнату по коду
 - `updateUserReady(roomId, userId, ready)` - обновляет статус готовности пользователя
-- `updateRoomStatus(roomId, status)` - обновляет статус комнаты
+- `updateRoomStatus(roomId, status, roundId?)` - обновляет статус комнаты и активный `roundId`
 
 #### `subscriptions.js`
 Real-time подписки на изменения в Firestore.
@@ -105,7 +105,10 @@ Real-time подписки на изменения в Firestore.
 - Переключение готовности
 - Запуск игры
 - Отображение заданий
-- Подтверждение выполнения задания
+- Подтверждение выполнения задания (`completedAt`)
+- Confirmation popup для eligible игроков
+- Таймер голосования (**60 сек**) + auto-abstain
+- Одноразовая резолюция результата подтверждения и обновление статусов заданий
 
 ## 💾 Модель данных Firestore
 
@@ -146,6 +149,8 @@ Real-time подписки на изменения в Firestore.
   status: "waiting" | "active",  // Статус комнаты
   code: string,                   // 4-символьный код комнаты (A-Z, 0-9)
   createdAt: timestamp,          // Время создания
+  roundId: string,               // Активный раунд (например, "round-1718123123")
+  roundStartedAt: timestamp,     // Время старта раунда
   assignedTasks: string[]         // Массив taskId назначенных заданий (опционально)
 }
 ```
@@ -166,13 +171,103 @@ Real-time подписки на изменения в Firestore.
       taskId: string,              // ID задания из Firestore (например, "task-17")
       taskText: string,            // Текст задания
       targetUserId: string,         // ID целевого игрока
-      targetName: string           // Имя целевого игрока
+      targetName: string,          // Имя целевого игрока
+      assignmentId?: string,       // ID документа в подколлекции assignments (опц.)
+      status: string,              // "awaiting_confirmation" | "completed" | "failed" | "discarded" (опц.)
+      completedAt: timestamp,      // Время подтверждения провокатором (опц.)
+      confirmationStartedAt: timestamp, // Старт окна голосования (опц.)
+      confirmationResult: "accepted" | "rejected" | "discarded", // Итог (опц.)
+      confirmationResolvedAt: timestamp, // Когда итог зафиксирован (опц.)
+      removedAt: timestamp         // Когда задача удалена из раунда (опц.)
     }
   ]
 }
 ```
 
 **Важно:** Каждый пользователь получает ровно 3 задания.
+
+### Подколлекция: `rooms/{roomId}/rounds/{roundId}/assignments/{assignmentId}`
+
+Основной источник истины для **фазы подтверждения** по конкретному заданию игрока.
+
+**Структура документа:**
+```javascript
+{
+  taskId: string,                    // Firestore taskId (task-<number>)
+  roundId: string,
+  provocateurId: string,             // Кто выполнял задание
+  targetId: string,                  // Цель задания (может совпадать с другим игроком)
+  completedByUserId: string,         // UID игрока, нажавшего "Да" (совпадает с provocateurId)
+  status: "awaiting_confirmation" | "completed" | "failed" | "discarded",
+  createdAt?: timestamp,             // время создания записи (используется для подсчёта времени)
+  completedAt: timestamp,
+  confirmationStartedAt: timestamp,
+  confirmationDeadlineMs?: number,   // Unix ms дедлайн (60с), опционально
+  confirmationResult: "accepted" | "rejected" | "discarded" | null,
+  confirmationResolvedAt?: timestamp,
+  confirmCount?: number,
+  rejectCount?: number,
+  abstainCount?: number,
+
+  // Rating phase (только если confirmationResult === "accepted")
+  ratingResult?: "completed" | null,
+  ratingResolvedAt?: timestamp,
+  finalScore?: number
+}
+```
+
+### Подколлекция: `rooms/{roomId}/rounds/{roundId}/assignments/{assignmentId}/votes/{voterId}`
+
+Голос конкретного eligible игрока по заданию.
+
+**Структура документа:**
+```javascript
+{
+  vote: "confirm" | "abstain" | "reject",
+  votedAt: timestamp
+}
+```
+
+### Подколлекция: `rooms/{roomId}/rounds/{roundId}/assignments/{assignmentId}/ratings/{raterId}`
+
+Рейтинг конкретного игрока за выполненное задание (ставится только после confirmation vote === `"confirm"`).
+
+**Структура документа:**
+```javascript
+{
+  rating: 1 | 2 | 3 | 4 | 5 | 2.5,
+  ratedAt: timestamp
+}
+```
+
+### Подколлекция: `rooms/{roomId}/rounds/{roundId}/tasks/{taskId}` (агрегаты, опционально)
+
+Агрегированный снимок для раунда (например, для табло/статистики). Дублирует ключевые поля из `assignments`.
+
+**Структура документа:**
+```javascript
+{
+  taskId: string,                    // Firestore taskId (task-<number>)
+  roundId: string,
+  provocateurId: string,
+  targetId: string,
+  status: "awaiting_confirmation" | "completed" | "failed" | "discarded",
+  completedAt: timestamp,
+  confirmationStartedAt: timestamp,
+  confirmationDeadlineMs: number,    // Unix ms дедлайн (60с)
+  eligibleVoterIds: string[],        // Список голосующих (все, кроме completedByUserId)
+  eligibleVotersCount: number,       // Размер множества eligibleVoterIds
+  totalVotes: number,                // Количество записанных голосов
+  voteCounts: {                      // Агрегированные счётчики
+    confirm: number,
+    abstain: number,
+    reject: number
+  },
+  confirmationResult: "accepted" | "rejected" | "discarded", // после резолюции
+  confirmationResolvedAt: timestamp, // после резолюции
+  resolutionTrigger: string          // "vote_submitted" | "timer_elapsed" | ...
+}
+```
 
 ## 🔄 Поток работы приложения
 
@@ -199,6 +294,7 @@ Real-time подписки на изменения в Firestore.
 4. Когда все готовы, хост видит кнопку "Начать игру"
 5. При нажатии:
    - Вызывается `assignTasksToRoom()` для распределения заданий
+   - Генерируется и сохраняется `roundId`
    - Статус комнаты меняется на `"active"`
    - Все клиенты автоматически перенаправляются на `game.html`
 
@@ -207,7 +303,67 @@ Real-time подписки на изменения в Firestore.
 2. Отображаются 3 кнопки с заданиями
 3. Текст задания модифицируется для отображения имени целевого игрока
 4. При клике на задание показывается подтверждение
-5. (Будущая функциональность) Подтверждение записывает `completedAt` timestamp
+5. По нажатию "Да" **не трогаем напрямую user-doc**, а пишем в assignment:
+   - `completedAt: serverTimestamp()`
+   - `status: "awaiting_confirmation"`
+   - `confirmationStartedAt: serverTimestamp()`
+   - `completedByUserId: currentUserId`
+6. Одновременно создается/обновляется round-task документ (агрегаты):
+   `rooms/{roomId}/rounds/{roundId}/tasks/{taskId}` с полями `eligibleVoterIds`, `confirmationDeadlineMs` и т.д.
+
+### 5. Фаза подтверждения (голосование)
+1. Popup **Task Confirmation** показывается автоматически только eligible игрокам:
+   - **все игроки, кроме того, кто нажал "Да"** (`completedByUserId`)
+2. В popup доступны кнопки:
+   - ✔ Confirm
+   - ◯ Abstain
+   - ✖ Reject
+3. Запущен синхронизированный таймер **60 секунд**.
+4. Голос пишется в:
+   `rooms/{roomId}/rounds/{roundId}/assignments/{assignmentId}/votes/{voterId}`
+5. Двойное голосование запрещено (transaction + проверка существующего голоса).
+6. По таймауту для не проголосовавших eligible игроков автоматически пишется `abstain`.
+
+### 6. Резолюция результата подтверждения
+Когда все голоса получены **или** истек таймер:
+
+1. Подсчитываются `confirmCount`, `abstainCount`, `rejectCount`
+2. Применяются правила:
+   - если `confirmCount > rejectCount` → `accepted`
+   - если `rejectCount > confirmCount` → `rejected`
+   - иначе (ничья, все воздержались и т.п.) → `discarded`
+3. Результат фиксируется **ровно один раз** (transaction) в `assignments/{assignmentId}`:
+   - `confirmationResult`
+   - `confirmationResolvedAt`
+   - `status`:
+     - `completed` для `accepted`
+     - `failed` для `rejected`
+     - `discarded` для `discarded`
+   - `confirmCount` / `rejectCount` / `abstainCount`
+4. Эти же агрегаты при наличии round-task дублируются в `rounds/{roundId}/tasks/{taskId}`.
+5. В user-doc провокатора соответствующий элемент `tasks[i]` получает:
+   - `status: "completed" | "failed" | "discarded"`
+   - `confirmationResult`
+   - `confirmationResolvedAt`
+6. Клиенты автоматически получают обновление через real-time подписки и:
+   - у провокатора его кнопка задания подсвечивается:
+     - зелёным + лейбл `"Completed"` при `completed`
+     - красным + лейбл `"Rejected"` при `failed`
+     - серым + лейбл `"No decision"` при `discarded`
+
+### 7. Фаза рейтинга (только после `confirmationResult === "accepted"`)
+1. UI открывает popup **сразу после** того, как игрок проголосовал ✔ `confirm` в `Task Confirmation`.
+2. Popup рейтинга НЕ открывается при ◯ `abstain` или ✖ `reject`.
+3. RatingPopup НЕ показывается:
+   - игроку, который нажал "Да" (`completedByUserId`)
+   - если у игрока уже есть рейтинг (`ratings/{currentUserId}`)
+4. Таймер рейтинга: **30 секунд**.
+5. Если игрок не выбрал оценку до истечения таймера, автоматически ставится рейтинг `2.5`.
+6. Рейтинги пишутся в:
+   `rooms/{roomId}/rounds/{roundId}/assignments/{assignmentId}/ratings/{raterId}`
+7. После завершения rating-phase вычисляется `finalScore`:
+   - это среднее значение `rating` из `ratings`
+   - пишется в assignment вместе с `ratingResult: "completed"` и `ratingResolvedAt`
 
 ## 🚀 Установка и запуск
 
@@ -272,6 +428,18 @@ service cloud.firestore {
       match /users/{userId} {
         allow read, write: if true;
       }
+
+      match /rounds/{roundId} {
+        allow read, write: if true;
+
+        match /tasks/{taskId} {
+          allow read, write: if true;
+
+          match /votes/{voterId} {
+            allow read, write: if true;
+          }
+        }
+      }
     }
     
     // Шаблоны заданий - только чтение
@@ -325,12 +493,13 @@ console.log(`Room created: ${roomId}, code: ${code}`);
 - `userId` (string) - ID пользователя
 - `ready` (boolean) - Статус готовности
 
-#### `updateRoomStatus(roomId, status)`
-Обновляет статус комнаты.
+#### `updateRoomStatus(roomId, status, roundId?)`
+Обновляет статус комнаты. При передаче `roundId` сохраняет активный раунд в room-документе.
 
 **Параметры:**
 - `roomId` (string) - ID комнаты
 - `status` (string) - Статус: `"waiting"` или `"active"`
+- `roundId` (string, опционально) - ID раунда (например `round-1718123123`)
 
 ### `taskAssignment.js`
 
@@ -458,6 +627,21 @@ const unsubscribe = subscribeToRoom(roomId, (roomData) => {
 - Минимум 2 пользователя в комнате
 - Минимум `users.length * 3` заданий в коллекции `taskTemplates`
 
+### Confirmation flow и анонимность
+
+- UI показывает popup голосования только eligible игрокам.
+- В UI голоса анонимны (не отображается кто как проголосовал).
+- В Firestore голос хранится с `voterId` (doc id) для технической валидации one-vote-per-user.
+- Провокатор и цель задачи не имеют права голосовать.
+
+### Exactly-once правила
+
+- Завершение задачи (`completedAt`) защищено от дублей.
+- Голос одного пользователя по задаче пишется ровно один раз (transaction).
+- Резолюция результата (`confirmationResult`) выполняется ровно один раз (transaction + check resolved).
+- Рейтинг одного пользователя по задаче пишется ровно один раз (`ratings/{raterId}`).
+- Резолюция rating-фазы (`finalScore` + `ratingResult`) выполняется ровно один раз.
+
 ## 🐛 Отладка
 
 ### Структурированное логирование
@@ -470,6 +654,10 @@ const unsubscribe = subscribeToRoom(roomId, (roomData) => {
 - `[FIRESTORE_WRITE]` - запись в Firestore
 - `[TASK_RENDER]` - отображение задания в UI
 - `[TASK_ID_VALIDATION]` - валидация формата taskId
+- `[TASK_COMPLETE]` - этап завершения задания провокатором
+- `[TASK_PHASE]` - переход задачи между фазами
+- `[TASK_VOTE]` - запись голосов и auto-abstain
+- `[TASK_RESOLUTION]` - финальная резолюция результата
 
 ### Типичные проблемы
 
@@ -497,6 +685,23 @@ const unsubscribe = subscribeToRoom(roomId, (roomData) => {
 2. Убедитесь, что в документе пользователя есть поле `tasks` (массив)
 3. Проверьте, что каждое задание имеет поля `taskId`, `taskText`, `targetName`
 
+#### Confirmation popup не появляется
+**Причина:** Пользователь не входит в eligible voters, нет `roundId`, или задача уже зарезолвлена.
+
+**Решение:**
+1. Проверьте `rooms/{roomId}.roundId`
+2. Проверьте `round task` документ в `rooms/{roomId}/rounds/{roundId}/tasks/{taskId}`
+3. Убедитесь, что пользователь не равен `provocateurId` и не равен `targetId`
+4. Проверьте логи `[TASK_PHASE]` и `[TASK_VOTE]`
+
+#### Разные итоги у клиентов (race condition)
+**Причина:** Обычно связана с ручными изменениями данных вне транзакций.
+
+**Решение:**
+1. Не изменяйте `confirmationResult` вручную из консоли
+2. Убедитесь, что резолюция идет только через transaction
+3. Проверьте логи `[TASK_RESOLUTION]`
+
 ### Проверка данных в Firestore
 
 **Правильная структура задания:**
@@ -521,8 +726,10 @@ const unsubscribe = subscribeToRoom(roomId, (roomData) => {
 ## 📝 TODO / Будущие улучшения
 
 - [ ] Добавление аутентификации пользователей
-- [ ] Запись `completedAt` timestamp при подтверждении задания
-- [ ] Система подсчета очков
+- [x] Запись `completedAt` timestamp при подтверждении задания
+- [x] Confirmation popup для eligible игроков + 30s таймер + auto-abstain
+- [x] Одноразовая резолюция результата (`accepted` / `rejected` / `discarded`)
+- [ ] Система подсчета очков для `accepted` задач
 - [ ] История выполненных заданий
 - [ ] Возможность перезапуска раунда
 - [ ] Адаптивный дизайн для мобильных устройств
