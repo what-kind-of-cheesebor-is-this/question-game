@@ -19,14 +19,18 @@ export class ConfirmationPopup {
    * @param {HTMLElement} [options.timerValueEl] - Element to display remaining seconds
    * @param {HTMLButtonElement} [options.confirmBtn]
    * @param {HTMLButtonElement} [options.abstainBtn]
-   * @param {HTMLButtonElement} [options.rejectBtn]
+   * @param {HTMLButtonElement} [options.rulesBtn]
+   * @param {HTMLElement} [options.rulesPanel]
    */
-  constructor(modalEl, { timerValueEl, confirmBtn, abstainBtn, rejectBtn } = {}) {
+  constructor(modalEl, { timerValueEl, confirmBtn, abstainBtn, rejectBtn, rulesBtn, rulesPanel } = {}) {
     this.modalEl = modalEl;
     this.timerValueEl = timerValueEl || modalEl?.querySelector("#taskConfirmationTimerValue") || null;
     this.confirmBtn = confirmBtn || modalEl?.querySelector("#taskVoteConfirmBtn") || null;
     this.abstainBtn = abstainBtn || modalEl?.querySelector("#taskVoteAbstainBtn") || null;
     this.rejectBtn = rejectBtn || modalEl?.querySelector("#taskVoteRejectBtn") || null;
+    this.rulesBtn = rulesBtn || modalEl?.querySelector("#taskConfirmationRulesBtn") || null;
+    this.rulesPanel = rulesPanel || modalEl?.querySelector("#taskConfirmationRulesPanel") || null;
+    this.rulesOpen = false;
 
     /** @type {null | {
      *   taskId: string,
@@ -45,6 +49,7 @@ export class ConfirmationPopup {
     this.handleConfirmClick = this.handleConfirmClick.bind(this);
     this.handleAbstainClick = this.handleAbstainClick.bind(this);
     this.handleRejectClick = this.handleRejectClick.bind(this);
+    this.handleRulesClick = this.handleRulesClick.bind(this);
     this.handleKeyDown = this.handleKeyDown.bind(this);
 
     this.attachEventListeners();
@@ -60,6 +65,9 @@ export class ConfirmationPopup {
     if (this.rejectBtn) {
       this.rejectBtn.addEventListener("click", this.handleRejectClick);
     }
+    if (this.rulesBtn) {
+      this.rulesBtn.addEventListener("click", this.handleRulesClick);
+    }
 
     // Block Esc while modal is active (not dismissible без голосования/таймера)
     document.addEventListener("keydown", this.handleKeyDown, true);
@@ -74,6 +82,9 @@ export class ConfirmationPopup {
     }
     if (this.rejectBtn) {
       this.rejectBtn.removeEventListener("click", this.handleRejectClick);
+    }
+    if (this.rulesBtn) {
+      this.rulesBtn.removeEventListener("click", this.handleRulesClick);
     }
     document.removeEventListener("keydown", this.handleKeyDown, true);
   }
@@ -97,6 +108,21 @@ export class ConfirmationPopup {
 
   handleRejectClick() {
     this.emitVote("reject");
+  }
+
+  handleRulesClick() {
+    this.rulesOpen = !this.rulesOpen;
+    if (this.rulesPanel) {
+      this.rulesPanel.classList.toggle("hidden", !this.rulesOpen);
+      this.rulesPanel.setAttribute("aria-hidden", this.rulesOpen ? "false" : "true");
+    }
+    if (this.rulesBtn) {
+      this.rulesBtn.setAttribute("aria-expanded", this.rulesOpen ? "true" : "false");
+      // Mobile Safari can leave :focus styling stuck on the last-tapped control; blur resets paint.
+      requestAnimationFrame(() => {
+        if (this.rulesBtn) this.rulesBtn.blur();
+      });
+    }
   }
 
   emitVote(vote) {
@@ -192,6 +218,7 @@ export class ConfirmationPopup {
 
     this.props = { ...props };
     this.voted = false;
+    this.resetRulesPanel();
 
     // STEP 7 — Timer from server timestamp; onTimeout triggers auto-abstain (handled by parent).
     const startedMs = this.toMillis(confirmationStartedAt);
@@ -226,6 +253,7 @@ export class ConfirmationPopup {
       this.modalEl.classList.add("hidden");
     }
     this.setButtonsDisabled(false);
+    this.resetRulesPanel();
     this.props = null;
     this.voted = false;
   }
@@ -238,6 +266,19 @@ export class ConfirmationPopup {
     if (this.confirmBtn) this.confirmBtn.disabled = disabled;
     if (this.abstainBtn) this.abstainBtn.disabled = disabled;
     if (this.rejectBtn) this.rejectBtn.disabled = disabled;
+    // Rules is not a vote control — never tie it to vote disabled state.
+  }
+
+  resetRulesPanel() {
+    this.rulesOpen = false;
+    if (this.rulesPanel) {
+      this.rulesPanel.classList.add("hidden");
+      this.rulesPanel.setAttribute("aria-hidden", "true");
+    }
+    if (this.rulesBtn) {
+      this.rulesBtn.setAttribute("aria-expanded", "false");
+      this.rulesBtn.disabled = false;
+    }
   }
 
   updateTimer() {

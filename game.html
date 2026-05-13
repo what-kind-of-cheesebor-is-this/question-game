@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Игра - Question Game</title>
+  <title>Задания - Question Game</title>
   <link rel="stylesheet" href="Styles/game.css" />
 </head>
 <body>
   <main>
     <div id="gameContent" class="game-content">
-    <h1>Игра</h1>
+    <h1>Задания</h1>
     <button id="hostFinishRoundBtn" class="host-finish-round-btn hidden" type="button">Завершить раунд</button>
     <div id="tasksContainer" class="tasks-container">
       <!-- Tasks will be loaded dynamically -->
@@ -36,9 +36,23 @@
         Time left: <span id="taskConfirmationTimerValue">60</span>s
       </p>
       <div class="task-confirmation-actions">
-        <button id="taskVoteConfirmBtn" class="task-confirmation-action-btn confirm">✔ Confirm</button>
-        <button id="taskVoteAbstainBtn" class="task-confirmation-action-btn abstain">◯ Abstain</button>
-        <button id="taskVoteRejectBtn" class="task-confirmation-action-btn reject">✖ Reject</button>
+        <button id="taskVoteConfirmBtn" class="task-confirmation-action-btn confirm" type="button">✔ Confirm</button>
+        <button id="taskVoteAbstainBtn" class="task-confirmation-action-btn abstain" type="button">◯ Abstain</button>
+        <button id="taskVoteRejectBtn" class="task-confirmation-action-btn reject" type="button">✖ Reject</button>
+        <button
+          id="taskConfirmationRulesBtn"
+          class="task-confirmation-rules-btn"
+          type="button"
+          aria-expanded="false"
+          aria-controls="taskConfirmationRulesPanel"
+        >
+          Rules
+        </button>
+        <div id="taskConfirmationRulesPanel" class="task-confirmation-rules-panel hidden" aria-hidden="true" role="region" aria-labelledby="taskConfirmationRulesBtn">
+          <p class="task-confirmation-rules-text">
+            Vote fairly: confirm if the task was done, abstain if unsure, reject if not. The timer limits how long you have to respond.
+          </p>
+        </div>
       </div>
     </div>
   </div>

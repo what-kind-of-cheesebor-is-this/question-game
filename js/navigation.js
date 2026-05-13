@@ -155,10 +155,10 @@ if (readinessBtn) {
       // Update UI immediately (will also be updated via real-time subscription)
       if (newReady) {
         readinessBtn.classList.add("is-ready");
-        readinessBtn.textContent = "Готов";
+        readinessBtn.textContent = "Готов!";
       } else {
         readinessBtn.classList.remove("is-ready");
-        readinessBtn.textContent = "Не готов";
+        readinessBtn.textContent = "Готов?";
       }
     } catch (error) {
       console.error("Error updating ready state:", error);
@@ -220,10 +220,10 @@ if (usersListElement) {
             if (readinessBtn) {
               if (currentUser.ready) {
                 readinessBtn.classList.add("is-ready");
-                readinessBtn.textContent = "Готов";
+                readinessBtn.textContent = "Готов!";
               } else {
                 readinessBtn.classList.remove("is-ready");
-                readinessBtn.textContent = "Не готов";
+                readinessBtn.textContent = "Готов?";
               }
             }
           }
@@ -392,6 +392,55 @@ function normalizeTasksArray(rawTasks, sourceTag) {
   }
 
   return [];
+}
+
+const TASK_UNKNOWN_PLAYER = "Unknown player";
+
+/**
+ * @param {object} task - Task entry from user document
+ * @param {Map<string, string>} playersById - room user id -> display name
+ */
+function resolveTaskTargetDisplayName(task, playersById) {
+  const fromTask = String(task?.targetPlayerName ?? task?.targetName ?? "").trim();
+  if (fromTask) return fromTask;
+  const tid = task?.targetUserId;
+  if (tid && playersById instanceof Map) {
+    const resolved = String(playersById.get(tid) ?? "").trim();
+    if (resolved) return resolved;
+  }
+  console.warn("[TASK_TARGET_NAME] Missing target player name; using fallback.", {
+    assignmentId: task?.assignmentId ?? null,
+    targetUserId: tid ?? null
+  });
+  return TASK_UNKNOWN_PLAYER;
+}
+
+/**
+ * UI-only label: template task text + single trailing "(TargetName)" — no "Task N" prefix, no duplicate name.
+ * @param {object} task
+ * @param {number} index - unused (kept for call-site stability)
+ * @param {Map<string, string>} playersById
+ */
+function buildTaskCardDisplayLabel(task, index, playersById) {
+  void index;
+  const targetDisplayName = resolveTaskTargetDisplayName(task, playersById);
+  const target = String(targetDisplayName || "").trim();
+  let base = String(task?.taskText ?? "").trim();
+
+  if (!target) {
+    return base;
+  }
+
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const trailingParen = new RegExp(`\\s\\(${escaped}\\)$`);
+  while (trailingParen.test(base)) {
+    base = base.replace(trailingParen, "").trim();
+  }
+
+  if (!base) {
+    return `(${target})`;
+  }
+  return `${base} (${target})`;
 }
 
 function getTimestampMillis(timestampValue) {
@@ -1046,6 +1095,11 @@ if (tasksContainer) {
     // Load user tasks from Firestore
     (async () => {
       try {
+        /** Room user id -> name; used to resolve task target labels after refresh. */
+        let gameRoomPlayersById = new Map();
+        /** Last known normalized task list for this client (re-render when room names update). */
+        let latestNormalizedGameTasks = null;
+
         const { db } = await import("./firebase.js");
         const { doc, getDoc, getDocs, collection, onSnapshot, updateDoc, serverTimestamp } = await import(
           "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
@@ -1068,6 +1122,13 @@ if (tasksContainer) {
             return;
           }
         }
+
+        const roomUsersColl = collection(db, "rooms", roomId, "users");
+        const roomUsersSnapInitial = await getDocs(roomUsersColl);
+        gameRoomPlayersById.clear();
+        roomUsersSnapInitial.forEach((d) => {
+          gameRoomPlayersById.set(d.id, String(d.data()?.name ?? "").trim());
+        });
         
         // Load user document with tasks
         const userRef = doc(db, "rooms", roomId, "users", userId);
@@ -1136,12 +1197,14 @@ if (tasksContainer) {
               console.error(`Task at index ${index} missing or invalid taskText:`, task);
               continue;
             }
-            
-            if (!task.targetName || typeof task.targetName !== "string" || task.targetName.trim() === "") {
-              console.error(`Task at index ${index} missing or invalid targetName:`, task);
-              continue;
+
+            const hasTargetHint =
+              String(task.targetPlayerName ?? task.targetName ?? "").trim() !== "" ||
+              String(task.targetUserId ?? "").trim() !== "";
+            if (!hasTargetHint) {
+              console.warn(`Task at index ${index} has no targetPlayerName, targetName, or targetUserId:`, task);
             }
-            
+
             validTasks.push({ task, index });
           }
           
@@ -1151,6 +1214,8 @@ if (tasksContainer) {
             tasksContainer.innerHTML = `<p>Ошибка: найдено ${validTasks.length} валидных заданий вместо 3</p>`;
             return;
           }
+
+          latestNormalizedGameTasks = tasks;
           
           // Render each valid task as a button
           validTasks.forEach(({ task, index }) => {
@@ -1169,34 +1234,12 @@ if (tasksContainer) {
             if (task.assignmentId) {
               button.setAttribute("data-assignment-id", task.assignmentId);
             }
-            
-            // Generate display label (UI-only, never stored in Firestore)
-            // Replace generic terms in task text with actual target name
-            // Example: "Заставь другого человека назвать овощ" -> "Заставь Bob назвать овощ"
-            let taskText = task.taskText.trim();
-            const targetName = task.targetName.trim();
-            
-            // Replace common generic terms with actual target name
-            // Order matters: more specific patterns first
-            taskText = taskText
-              .replace(/другого человека/gi, targetName)
-              .replace(/другого игрока/gi, targetName)
-              .replace(/кого-то/gi, targetName)
-              .replace(/человека/gi, targetName)
-              .replace(/игрока/gi, targetName);
-            
-            // Ensure target name is visible - if replacement didn't work, append it
-            // This is a fallback to guarantee target name is always shown
-            if (!taskText.includes(targetName)) {
-              taskText = `${taskText} (${targetName})`;
-            }
-            
-            // Display label is computed here and only used for UI
-            const displayLabel = taskText; // This is "Task N (PlayerName)" format
-            
+
+            const displayLabel = buildTaskCardDisplayLabel(task, index, gameRoomPlayersById);
+
             // Log taskId vs displayLabel for debugging
             console.log(`[TASK_RENDER] Rendering task. taskId="${taskId}", displayLabel="${displayLabel}", status="${task.status || ""}"`);
-            
+
             button.textContent = displayLabel;
             const isFinal =
               task.status === "completed" || task.status === "failed" || task.status === "discarded";
@@ -1292,47 +1335,54 @@ if (tasksContainer) {
           // Re-render tasks when user doc updates (e.g. status -> completed/failed/discarded after resolution).
           function renderUserTaskButtons(tasksToRender) {
             if (!tasksContainer || tasksToRender.length !== 3) return;
-            const validTasks = [];
+            const validTasksLocal = [];
             for (let index = 0; index < tasksToRender.length; index++) {
               const task = tasksToRender[index];
               if (!task || typeof task !== "object") continue;
               if (!task.taskText || typeof task.taskText !== "string" || task.taskText.trim() === "") continue;
-              if (!task.targetName || typeof task.targetName !== "string" || task.targetName.trim() === "") continue;
-              validTasks.push({ task, index });
+              validTasksLocal.push({ task, index });
             }
-            if (validTasks.length !== 3) return;
+            if (validTasksLocal.length !== 3) return;
             tasksContainer.innerHTML = "";
-            validTasks.forEach(({ task, index }) => {
+            validTasksLocal.forEach(({ task, index }) => {
               const taskId = task.taskId;
               if (!taskId) return;
               const button = document.createElement("button");
               button.className = "task-button";
-              button.setAttribute("data-task-index", index);
+              button.setAttribute("data-task-index", String(index));
               button.setAttribute("data-task-id", taskId);
               if (task.assignmentId) button.setAttribute("data-assignment-id", task.assignmentId);
-              let taskText = task.taskText.trim();
-              const targetName = task.targetName.trim();
-              taskText = taskText
-                .replace(/другого человека/gi, targetName)
-                .replace(/другого игрока/gi, targetName)
-                .replace(/кого-то/gi, targetName)
-                .replace(/человека/gi, targetName)
-                .replace(/игрока/gi, targetName);
-              if (!taskText.includes(targetName)) taskText = `${taskText} (${targetName})`;
-              const displayLabel = taskText;
+              const displayLabel = buildTaskCardDisplayLabel(task, index, gameRoomPlayersById);
               button.textContent = displayLabel;
-              if (task.status === "completed" || task.status === "failed" || task.status === "discarded") {
+              const isFinal =
+                task.status === "completed" || task.status === "failed" || task.status === "discarded";
+              if (isFinal) {
                 button.classList.add("task-button--" + task.status);
                 const label = document.createElement("span");
                 label.className = "task-result-label";
-                label.textContent = task.status === "completed" ? "Completed" : task.status === "failed" ? "Rejected" : "No decision";
+                label.textContent =
+                  task.status === "completed" ? "Completed" : task.status === "failed" ? "Rejected" : "No decision";
                 button.appendChild(document.createTextNode(" "));
                 button.appendChild(label);
                 button.disabled = true;
+                if (locallyCompletedTaskId && taskId === locallyCompletedTaskId) {
+                  locallyCompletedTaskId = null;
+                }
+              } else if (locallyCompletedTaskId && taskId === locallyCompletedTaskId) {
+                button.classList.add("task-button--completed");
+                button.disabled = true;
+                if (!button.querySelector(".task-result-label")) {
+                  const label = document.createElement("span");
+                  label.className = "task-result-label";
+                  label.textContent = "Completed";
+                  button.appendChild(document.createTextNode(" "));
+                  button.appendChild(label);
+                }
               }
               tasksContainer.appendChild(button);
               if (confirmationArea && confirmationMessage) {
                 button.addEventListener("click", () => {
+                  if (button.disabled) return;
                   const assignmentId = button.getAttribute("data-assignment-id");
                   const displayLabelClick = button.textContent;
                   if (confirmYes) confirmYes.disabled = false;
@@ -1352,7 +1402,10 @@ if (tasksContainer) {
             gameUserTasksUnsubscribe = onSnapshot(userRef, (liveUserDoc) => {
               if (!liveUserDoc.exists()) return;
               const liveTasks = normalizeTasksArray(liveUserDoc.data().tasks, "live_user_snapshot");
-              if (liveTasks.length === 3) renderUserTaskButtons(liveTasks);
+              if (liveTasks.length === 3) {
+                latestNormalizedGameTasks = liveTasks;
+                renderUserTaskButtons(liveTasks);
+              }
             });
           }
 
@@ -1362,14 +1415,20 @@ if (tasksContainer) {
               latestUsersSnapshotVersion += 1;
               const snapshotVersion = latestUsersSnapshotVersion;
 
+              gameRoomPlayersById.clear();
               const roomUsers = [];
               usersSnapshot.forEach((userDoc) => {
                 const userData = userDoc.data();
+                gameRoomPlayersById.set(userDoc.id, String(userData?.name ?? "").trim());
                 roomUsers.push({
                   id: userDoc.id,
                   tasks: normalizeTasksArray(userData.tasks, `room_users_snapshot:${userDoc.id}`)
                 });
               });
+
+              if (latestNormalizedGameTasks && latestNormalizedGameTasks.length === 3 && tasksContainer) {
+                renderUserTaskButtons(latestNormalizedGameTasks);
+              }
 
               void (async () => {
                 const roundId = await resolveRoundId(roomId);

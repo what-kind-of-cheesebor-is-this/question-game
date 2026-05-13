@@ -68,7 +68,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  margin: 0 auto;
+  margin: 28px auto 0;      /* сверху — отступ от заголовка; по бокам — центрирование */
 }
 
 .task-button {
@@ -238,6 +238,8 @@ h1 {
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .task-confirmation-action-btn.confirm {
@@ -255,6 +257,80 @@ h1 {
 .task-confirmation-action-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.task-confirmation-action-btn:focus {
+  outline: none;
+}
+
+.task-confirmation-action-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+  outline-offset: 2px;
+}
+
+/* Keep vote button colors when disabled (mobile WebKit can otherwise look “wrong” vs desktop). */
+.task-confirmation-action-btn.confirm:disabled {
+  background-color: #2f855a;
+}
+
+.task-confirmation-action-btn.abstain:disabled {
+  background-color: #4a5568;
+}
+
+.task-confirmation-action-btn.reject:disabled {
+  background-color: #c53030;
+}
+
+/* Do not reuse vote-button classes: stable green, no blue focus ring from the system. */
+.task-confirmation-rules-btn {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 14px 16px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: #2f855a;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.task-confirmation-rules-btn:hover {
+  background-color: #276749;
+}
+
+.task-confirmation-rules-btn:active {
+  background-color: #2f855a;
+}
+
+.task-confirmation-rules-btn:focus {
+  outline: none;
+}
+
+.task-confirmation-rules-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.task-confirmation-rules-panel {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.task-confirmation-rules-panel.hidden {
+  display: none;
+}
+
+.task-confirmation-rules-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: #e2e8f0;
+  text-align: left;
 }
 
 /* Rating modal (1–5) */
@@ -475,13 +551,21 @@ h1 {
     font-size: 40px;
   }
 
-  .task-button {
-    padding: 20px 28px;
-    font-size: 20px;
+  .tasks-container {
+    gap: 32px;
+    width: min(560px, calc(100vw - 48px));
+    max-width: 560px;
   }
 
   .confirmation-area {
+    width: min(560px, calc(100vw - 48px));
+    max-width: 560px;
     padding: 24px 28px;
+  }
+
+  .task-button {
+    padding: 20px 28px;
+    font-size: 20px;
   }
 
   .confirmation-message {
